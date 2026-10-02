@@ -150,27 +150,36 @@ const uint64_t AT_HWCAP = NT_GNU_HWCAP;
 #  include <cpu-features.h>
 #endif
 
-
-#if ((defined __ppc64__ || defined __PPC64__) && (defined HAVE_GETAUXVAL || defined HAVE_ELF_AUX_INFO))
-# include "sys/auxv.h"
+#if defined HAVE_GETAUXVAL || defined HAVE_ELF_AUX_INFO
+# include <sys/auxv.h>
+# ifndef AT_HWCAP
+#   define AT_HWCAP 16
+# endif
 # ifndef AT_HWCAP2
 #   define AT_HWCAP2 26
 # endif
-# ifndef PPC_FEATURE2_ARCH_2_07
-#   define PPC_FEATURE2_ARCH_2_07 0x80000000
-# endif
-# ifndef PPC_FEATURE2_ARCH_3_00
-#   define PPC_FEATURE2_ARCH_3_00 0x00800000
-# endif
-# ifndef PPC_FEATURE_HAS_VSX
-#   define PPC_FEATURE_HAS_VSX 0x00000080
-# endif
-#endif
 
-#if defined __loongarch64
-#include "sys/auxv.h"
-#define LA_HWCAP_LSX   (1<<4)
-#define LA_HWCAP_LASX  (1<<5)
+# ifdef __arm__
+#   define HWCAP_ARM_NEON (1U << 12)
+#   define HWCAP_ARM_FP16
+# endif
+
+# ifdef __aarch64__
+#   define HWCAP_AARCH64_ASIMDDP (1U << 20)
+#   define HWCAP_AARCH64_ASIMDHP (1U << 10)
+#   define HWCAP2_AARCH64_BF16   (1U << 14)
+# endif
+
+# if defined __ppc64__ || defined __PPC64__
+#   define HWCAP_PPC_VSX        0x00000080
+#   define HWCAP2_PPC_ARCH_2_07 0x80000000
+#   define HWCAP2_PPC_ARCH_3_00 0x00800000
+# endif
+
+# ifdef __loongarch64
+#   define HWCAP_LA_LSX  (1U << 4)
+#   define HWCAP_LA_LASX (1U << 5)
+# endif
 #endif
 
 #if defined _WIN32 || defined WINCE
@@ -587,15 +596,13 @@ struct HWFeatures
                 // see https://elixir.bootlin.com/linux/latest/source/arch/arm64/include/uapi/asm/hwcap.h
                 if (auxv.a_type == AT_HWCAP)
                 {
-                    have[CV_CPU_NEON_DOTPROD] = (auxv.a_un.a_val & (1 << 20)) != 0; // HWCAP_ASIMDDP
-                    have[CV_CPU_NEON_FP16] = (auxv.a_un.a_val & (1 << 10)) != 0; // HWCAP_ASIMDHP
+                    have[CV_CPU_NEON_DOTPROD] = (auxv.a_un.a_val & HWCAP_AARCH64_ASIMDDP) != 0;
+                    have[CV_CPU_NEON_FP16] = (auxv.a_un.a_val & HWCAP_AARCH64_ASIMDHP) != 0;
                 }
-#if defined(AT_HWCAP2)
                 else if (auxv.a_type == AT_HWCAP2)
                 {
-                    have[CV_CPU_NEON_BF16] = (auxv.a_un.a_val & (1 << 14)) != 0; // HWCAP2_BF16
+                    have[CV_CPU_NEON_BF16] = (auxv.a_un.a_val & HWCAP2_AARCH64_BF16) != 0;
                 }
-#endif
             }
 
             close(cpufile);
@@ -688,23 +695,23 @@ struct HWFeatures
 
     #if (defined __ppc64__ || defined __PPC64__) && defined HAVE_GETAUXVAL
         unsigned int hwcap = getauxval(AT_HWCAP);
-        if (hwcap & PPC_FEATURE_HAS_VSX) {
+        if (hwcap & HWCAP_PPC_VSX) {
             hwcap = getauxval(AT_HWCAP2);
-            if (hwcap & PPC_FEATURE2_ARCH_3_00) {
+            if (hwcap & HWCAP2_PPC_ARCH_3_00) {
                 have[CV_CPU_VSX] = have[CV_CPU_VSX3] = true;
             } else {
-                have[CV_CPU_VSX] = (hwcap & PPC_FEATURE2_ARCH_2_07) != 0;
+                have[CV_CPU_VSX] = (hwcap & HWCAP2_PPC_ARCH_2_07) != 0;
             }
         }
     #elif (defined __ppc64__ || defined __PPC64__) && defined HAVE_ELF_AUX_INFO
         unsigned long hwcap = 0;
         elf_aux_info(AT_HWCAP, &hwcap, sizeof(hwcap));
-        if (hwcap & PPC_FEATURE_HAS_VSX) {
+        if (hwcap & HWCAP_PPC_VSX) {
             elf_aux_info(AT_HWCAP2, &hwcap, sizeof(hwcap));
-            if (hwcap & PPC_FEATURE2_ARCH_3_00) {
+            if (hwcap & HWCAP2_PPC_ARCH_3_00) {
                 have[CV_CPU_VSX] = have[CV_CPU_VSX3] = true;
             } else {
-                have[CV_CPU_VSX] = (hwcap & PPC_FEATURE2_ARCH_2_07) != 0;
+                have[CV_CPU_VSX] = (hwcap & HWCAP2_PPC__ARCH_2_07) != 0;
             }
         }
     #else
@@ -724,8 +731,8 @@ struct HWFeatures
     #if defined __loongarch64 && defined __linux__
         int flag = (int)getauxval(AT_HWCAP);
 
-        have[CV_CPU_LSX] = (flag & LA_HWCAP_LSX) != 0;
-        have[CV_CPU_LASX] = (flag & LA_HWCAP_LASX) != 0;
+        have[CV_CPU_LSX] = (flag & HWCAP_LA_LSX) != 0;
+        have[CV_CPU_LASX] = (flag & HWCAP_LA_LASX) != 0;
     #endif
 
         bool skip_baseline_check = false;
